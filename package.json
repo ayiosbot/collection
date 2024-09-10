@@ -1,6 +1,6 @@
 {
   "name": "@ayios/collection",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Ayios collection class",
   "main": "out/src/index.js",
   "keywords": [],
