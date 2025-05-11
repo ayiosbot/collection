@@ -1,7 +1,7 @@
 // Taken from oceanic.js (MIT)
 // https://github.com/OceanicJS/Oceanic
 
-// CachedCollection is the work of Ayios
+// CachedCollection/CachedSet is the work of Ayios and is under MIT license
 
 /** @module Collection */
 /** A {@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map | Map} with some Array-like additions. */
@@ -129,11 +129,12 @@ export class Collection<K, V> extends Map<K, V> {
 export class CachedCollection<K, V> extends Collection<K, V> {
     private cache: Record<string, NodeJS.Timeout> = {};
     public defaultMs: number = 15000;
+    public onRemove: (key: K, value: V) => void = () => false;
     constructor(defaultMs: number) {
         super()
         this.defaultMs = defaultMs;
     }
-    extend(key: K, ms: number): void {
+    extend(key: K, ms: number = this.defaultMs): void {
         if (this.cache[key as string]) clearTimeout(this.cache[key as string]);
 
         this.cache[key as string] = setTimeout(() => {
@@ -149,6 +150,13 @@ export class CachedCollection<K, V> extends Collection<K, V> {
 
         return super.clear();
     }
+    /** Update a key without messing with expiration. This will automatically create a new key if it doesn't exist. */
+    update(key: K, value: V): this {
+        if (!this.has(key)) return this.set(key, value);
+        super.set(key, value);
+
+        return this;
+    }
     set(key: K, value: V, ms: number = this.defaultMs): this {
         if (this.cache[key as string]) clearTimeout(this.cache[key as string]);
 
@@ -163,9 +171,50 @@ export class CachedCollection<K, V> extends Collection<K, V> {
     delete(key: K): boolean {
         if (this.cache[key as string]) {
             clearTimeout(this.cache[key as string]);
+            this.onRemove(key, this.get(key)!);
             delete this.cache[key as string];
         }
 
         return super.delete(key);
+    }
+}
+
+/** Cached set that deletes itself after a specified time period */
+export class CachedSet<T> extends Set<T> {
+    public defaultMs: number = 15000;
+    public extendOnDuplicate: boolean = false;
+    private cache: Record<string, NodeJS.Timeout> = {};
+    /** fires one line before actually deleting. */
+    public onRemove: (value: T, isTimeout?: boolean) => void = () => false;
+
+    add(value: T, ms: number = this.defaultMs): this {
+        const key = value as unknown as string; // Ensure compatibility with the cache key
+        if (this.has(value)) {
+            if (!this.extendOnDuplicate) return this;
+            clearTimeout(this.cache[key]);
+        }
+        this.cache[key] = setTimeout(() => {
+            this.delete(value); // Automatically remove the value after the timeout
+        }, ms);
+        return super.add(value);
+    }
+
+    delete(value: T): boolean {
+        const key = value as unknown as string; // Ensure compatibility with the cache key
+        if (!this.has(value)) return false;
+
+        clearTimeout(this.cache[key]);
+        this.onRemove(value);
+        delete this.cache[key];
+        return super.delete(value);
+    }
+
+    /** Does not fire onRemove */
+    clear(): void {
+        for (const timeout of Object.values(this.cache)) {
+            clearTimeout(timeout);
+        }
+        this.cache = {};
+        super.clear();
     }
 }
